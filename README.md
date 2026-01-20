@@ -1,11 +1,39 @@
-# Gait Cycle Based Apporach for FoG Prediction
+# Gait-cycle Based Approach for FoG Prediction
 
-{abstract}
-Freezing of Gait (FoG) is a common and debilitating symptom of Parkinson’s disease (PD) that significantly increases the risk of falls. Most existing deep learning approaches for FoG prediction rely on fixed-length sliding-window segmentation of wearable sensor data. Although this strategy generates a large number of training samples and facilitates stable optimization, it often captures only partial gait cycles, leading to incomplete representations of stance–swing dynamics and sub-optimal learning efficiency and prediction performance. In this work, we propose a novel a physiologically informed, gait-cycle based approach that identifies the onset of gait-cycle and ensures sufficient samples to contain a complete gait cycle. Intuitively, this yields a cleaner, more compact, and physiologically meaningful training set that better preserves gait dynamics across cycles. Compared with conventional sliding-window segmentation, the proposed approach achieves improved prediction performance while significantly reducing computational cost. 
+Overview
+-------
+Freezing of Gait (FoG) is a disabling symptom of Parkinson’s disease that increases fall risk. Most data-driven FoG prediction methods use fixed-length sliding windows on wearable-sensor time series. While effective for model training, sliding windows frequently cut through gait cycles and capture only partial stance–swing dynamics, which can reduce model efficiency and prediction performance.
 
-{Method}
-A gait cycle is typically defined as the interval between two successive heel strikes of the same foot and consists of distinct stance and swing phases, such as stance and heel-off \cite{PappasGaitPhase}. These phases exhibit temporal characteristic and biomechanical patterns that are critical for accurately modeling locomotion dynamics and detecting gait abnormalities associated with FoG. When fixed-length sliding-window segmentation is applied, each window often only captures partial portions of the full gait cycle. Hence, multiple windows are often needed to collectively represent a complete stance-swing sequence. This fragmentation can complicate temporal learning, and thus limit the model performance. %, as phase transitions may be inconsistently distributed across multiple windows.%, increasing the burden on the model to infer long-range dependencies.
+This repository demonstrates a physiologically informed segmentation strategy that aligns segments with complete gait cycles. By starting each segment at a consistent gait event, the method produces more compact, interpretable inputs that better preserve phase dynamics and can improve prediction while reducing computational cost. The demo notebook is `main.ipynb`.
 
-To address this limitation, the proposed method will identify the onset of each gait cycle, and ensure sufficient samples to represent a complete gait cycle within each segments. The resulting segments provide more consistent and physiologically interpretable representations of locomotion dynamics, preserving the intrinsic temporal structure of human gait. Intuitively, this alignment facilitates the monitoring of phase-to-phase trends across consecutive gait cycles and potentially provides a more suitable input for learning-based FoG prediction models. In addition, unlike sliding-window approach which spread the important characteristics across multiple segments, this could potentially improve the training efficiency.
+Dataset
+-------
+The demo uses a subset of the publicly available Beijing Xuanwu Hospital dataset [1]. To keep the repository small, only selected patients are included here. Replace the `Beijing Dataset/` folder with the full dataset locally to reproduce complete results.
 
-First, the IMU signals were low-pass filtered with a cutoff frequency of 2.5 Hz to suppress high-frequency noise. The onset of a gait cycle was then identified as the positive zero-crossing of the vertical gyroscope ($\mathrm{Gyro}_z$) readings, preceded by a local minimum that falls below a predefined threshold. Using these detected events as onset points ensured that each segment begins at a consistent gait phase as shown in Fig. \ref{fig:gs complete gait}. 
+Method
+------
+A gait cycle is the interval between two successive heel strikes of the same foot and contains stance and swing phases [2]. Rather than using fixed-length windows, the proposed pipeline:
+
+- low-pass filters IMU signals (cutoff 2.5 Hz) to remove high-frequency noise,
+- detects gait-cycle onset events from the vertical gyroscope (`Gyro_z`) using a positive zero-crossing preceded by a local minimum below a threshold,
+- extracts segments that contain a full gait cycle starting at each detected onset, and
+- labels segments for FoG prediction (including short pre-FOG intervals).
+
+Implementation notes
+--------------------
+- The core dataset loader and processing utilities are in the `Utils/` folder.
+- The demo flow in `main.ipynb` performs: loading, downsampling to 50 Hz, denoising, pre-FOG label generation, feature normalization, segmentation, and plotting.
+- Segmentation API examples from the notebook:
+
+	- `database.construct_segs_and_labels()` — returns gait-cycle based segments and labels.
+	- `database.construct_sliding_windows_and_labels()` — sliding-window baseline for comparison.
+
+Usage
+-----
+Open `main.ipynb` and run the cells. For a quick test the notebook limits processing to a single patient by default.
+
+Citations
+---------
+[1] Zhang, W.; Yang, Z.; Li, H.; et al. Multimodal Data for the Detection of Freezing of Gait in Parkinson’s Disease. Sci Data 9, 606 (2022). https://doi.org/10.1038/s41597-022-01713-8
+
+[2] Pappas, I.; Popovic, M.; Keller, T.; Dietz, V.; Morari, M. A Reliable Gait Phase Detection System. IEEE Trans. Neural Syst. Rehabil. Eng., 2001. https://doi.org/10.1109/7333.928571 

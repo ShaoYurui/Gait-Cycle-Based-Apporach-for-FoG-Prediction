@@ -31,32 +31,34 @@ class Trail:
         gyro_z_values = filtered_df[feature_col].values
         zero_crossing_indices = []
         last_minima = 0
-        corssing_val = -0.5
-        minima_treshold = -0.7
+        corssing_val = 0
+        minima_treshold = -1
+        minima_index = -1
         for index in range(1, len(gyro_z_values)-1):
             # get the last minima 
             if gyro_z_values[index-1]>gyro_z_values[index] and gyro_z_values[index]<gyro_z_values[index+1]:
                 last_minima = gyro_z_values[index]
+                minima_index = index
 
             # get a zero crossing with minima less than threshold
             if(gyro_z_values[index] < corssing_val and gyro_z_values[index+1] >= corssing_val) and last_minima < minima_treshold:
-                zero_crossing_indices.append(index-5)
+                zero_crossing_indices.append(minima_index)
         return zero_crossing_indices
     
-    def prepare_segs_and_labels(self, FIX_LENGTH):
+    def construct_segs_and_labels(self, FIX_LENGTH):
         MINIMUM_GAIT_LEN = 10
         zero_crossing_indices = self.get_zero_crossing_indices(self.sample_rate)
         
         start_index = 0
-        max_len = len(self.df)
+        max_df_len = len(self.df)
         self.segIndices= []
         self.segLabels = []
         self.segs = []
-        self.segGap = []
 
         # Iterate throught all positive zero corssing
         for index in zero_crossing_indices:
-            if start_index + FIX_LENGTH >= max_len:
+            # break if reaching the end of df
+            if start_index + FIX_LENGTH >= max_df_len:
                 break
             
             labels = self.df["FoGClass"].values[start_index: start_index+FIX_LENGTH]
@@ -66,29 +68,22 @@ class Trail:
             if 2 in labels or start_index == 0 or index - start_index <= MINIMUM_GAIT_LEN:
                 start_index = index
                 continue
-
+            
+            #Generate label for each segment
             cur_seg_label = 0
             if 1 in labels: cur_seg_label = 1
 
+            # Append segments to the list
             seg = self.df[start_index: start_index+FIX_LENGTH].copy() 
             self.segs.append(seg[self.feature_columns].values)
             self.segIndices.append(start_index)
             self.segLabels.append(cur_seg_label)
-
             start_index = index
 
-        for i, cur_index in enumerate(self.segIndices):
-            if i == 0:
-                self.segGap.append(5.0)
-                continue
-            index_gap = cur_index - self.segIndices[i-1]
-            time_gap = min(index_gap/self.sample_rate, 5.0)
-            self.segGap.append(time_gap)
 
-    def prepare_slidingWindow_and_labels(self, WINDOW_SIZE, WINDOW_STRIDE):
+    def construct_slidingWindow_and_labels(self, WINDOW_SIZE, WINDOW_STRIDE):
         self.slidingWindows = []
         self.slidingWindowLabels = []
-        self.slidingWindowGaps = []
         self.slidingWindowIndices = []
         self.feature_columns = self.feature_columns
         for i in range(0, len(self.df)-WINDOW_SIZE, WINDOW_STRIDE):
@@ -102,7 +97,6 @@ class Trail:
 
             self.slidingWindows.append(slidingWindow[self.feature_columns].values)
             self.slidingWindowLabels.append(label)
-            self.slidingWindowGaps.append(WINDOW_SIZE/self.sample_rate)
             self.slidingWindowIndices.append(i)
 
     def plot_slidingWindows(self, feature_to_plot='Gyro_z_left',num_cols = 10, skip=0):
@@ -117,11 +111,7 @@ class Trail:
         # Layout: number of columns per row and number of rows needed
         num_rows = (num_windows + num_cols - 1) // num_cols  # Ceiling division
 
-        # If feature not present in feature_columns, show message on each subplot
-        has_feature = feature_to_plot in self.feature_columns
-        feature_idx = None
-        if has_feature:
-            feature_idx = self.feature_columns.index(feature_to_plot)
+        feature_idx = self.feature_columns.index(feature_to_plot)
 
         # Create one figure per row so each row is displayed/saved separately
         for row in range(num_rows):
@@ -137,33 +127,23 @@ class Trail:
 
                 if idx < num_windows + skip:
                     window = self.slidingWindows[idx]
+                    feature_data = window[:, feature_idx]
 
-                    if has_feature and feature_idx is not None:
-                        feature_data = window[:, feature_idx]
-
-                        label = self.slidingWindowLabels[idx]
-                        plot_color = 'darkorange' if label == 1 else 'black'
-                        ax.plot(feature_data, color=plot_color)
-
-                        ax.set_facecolor('lightblue')
-                        ax.patch.set_alpha(0.5)
-
-                        gap = self.slidingWindowGaps[idx] if idx < len(self.slidingWindowGaps) else 0
-                        ax.set_title(f'Window {idx+1}')
-                        ax.set_xlabel('DP')
-                
-                        if col == 0:
-                            ax.set_ylabel('Gyro_z (deg/s)')
-                        ax.tick_params()
-                        # Show only start and end ticks on x-axis for clarity
-                        try:
-                            ax.set_xlim(0, len(feature_data) - 1)
-                            ax.set_xticks([0, len(feature_data) - 1])
-                        except Exception:
-                            pass
-                    else:
-                        ax.text(0.5, 0.5, f'Feature {feature_to_plot}\nnot found',
-                                ha='center', va='center', transform=ax.transAxes)
+                    label = self.slidingWindowLabels[idx]
+                    plot_color = 'darkorange' if label == 1 else 'black'
+                    ax.plot(feature_data, color=plot_color)
+                    ax.set_facecolor('lightblue')
+                    ax.patch.set_alpha(0.5)
+                    ax.set_title(f'Window {idx+1}')
+                    ax.set_xlabel('DP')
+            
+                    if col == 0:
+                        ax.set_ylabel('Gyro_z (deg/s)')
+                    ax.tick_params()
+                    # Show only start and end ticks on x-axis for clarity
+                    ax.set_xlim(0, len(feature_data) - 1)
+                    ax.set_xticks([0, len(feature_data) - 1])
+                    
                 else:
                     # No window for this subplot in the last (partial) row
                     ax.axis('off')
@@ -185,10 +165,7 @@ class Trail:
         num_rows = (num_segs + num_cols - 1) // num_cols  # Ceiling division
 
         # If feature not present in feature_columns, show message on each subplot
-        has_feature = feature_to_plot in self.feature_columns
-        feature_idx = None
-        if has_feature:
-            feature_idx = self.feature_columns.index(feature_to_plot)
+        feature_idx = self.feature_columns.index(feature_to_plot)
 
         # Create one figure per row so each row is displayed/saved separately
         for row in range(num_rows):
@@ -205,30 +182,20 @@ class Trail:
                 if idx < num_segs + skip:
                     seg = self.segs[idx]
 
-                    if has_feature and feature_idx is not None:
-                        feature_data = seg[:, feature_idx]
-
-                        label = self.segLabels[idx]
-                        plot_color = 'darkorange' if label == 1 else 'black'
-                        ax.plot(feature_data, color=plot_color)
-
-                        ax.set_facecolor('lightgreen')
-                        ax.patch.set_alpha(0.5)
-
-                        gap = self.segGap[idx] if idx < len(self.segGap) else 0
-                        ax.set_title(f'Segment {idx+1}')
-                        ax.set_xlabel('DP')
-                        if col == 0:
-                            ax.set_ylabel('Gyro_z (deg/s)')
-                        ax.tick_params()
-                        try:
-                            ax.set_xlim(0, len(feature_data) - 1)
-                            ax.set_xticks([0, len(feature_data) - 1])
-                        except Exception:
-                            pass
-                    else:
-                        ax.text(0.5, 0.5, f'Feature {feature_to_plot}\nnot found',
-                                ha='center', va='center', transform=ax.transAxes)
+                    feature_data = seg[:, feature_idx]
+                    label = self.segLabels[idx]
+                    plot_color = 'darkorange' if label == 1 else 'black'
+                    ax.plot(feature_data, color=plot_color)
+                    ax.set_facecolor('lightgreen')
+                    ax.patch.set_alpha(0.5)
+                    ax.set_title(f'Segment {idx+1}')
+                    ax.set_xlabel('DP')
+                    if col == 0:
+                        ax.set_ylabel('Gyro_z (deg/s)')
+                    ax.tick_params()
+                    ax.set_xlim(0, len(feature_data) - 1)
+                    ax.set_xticks([0, len(feature_data) - 1])
+                
                 else:
                     # No segment for this subplot in the last (partial) row
                     ax.axis('off')
@@ -371,7 +338,7 @@ class Database:
         for patient in self.patients:
             for trail in patient.trails:
                 if not self.PREPARED_SEGS:
-                    trail.prepare_segs_and_labels(segmentLength)
+                    trail.construct_segs_and_labels(segmentLength)
                 if trail.segs:
                     trails_segsSequence.append(trail.segs)
                     trails_segLabelsSequence.append(trail.segLabels)
@@ -384,7 +351,7 @@ class Database:
         for patient in self.patients:
             for trail in patient.trails:
                 if not self.PREPARED_SLICES:
-                    trail.prepare_slidingWindow_and_labels(windowSize, windowStride)
+                    trail.construct_slidingWindow_and_labels(windowSize, windowStride)
                 if trail.slidingWindows:
                     slidingWindows.append(trail.slidingWindows)
                     slidingWindowLabels.append(trail.slidingWindowLabels)
